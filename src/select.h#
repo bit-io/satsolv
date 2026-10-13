@@ -1,0 +1,33 @@
+pub const SELECTION_NAME:     i32 = 1
+pub const SELECTION_PROVIDES: i32 = 2
+pub const SELECTION_FILELIST: i32 = 4
+pub const SELECTION_CANON:    i32 = 8
+pub const SELECTION_DOTARCH:  i32 = 16
+pub const SELECTION_REL:      i32 = 32
+pub const SELECTION_GLOB:     i32 = 512
+pub const SELECTION_FLAT:     i32 = 1024
+pub const SELECTION_NOCASE:   i32 = 2048
+
+;; Wypelnia kolejke `sel` (pary how/what) dla `name`; zwraca flagi
+;; wyniku (0 = nic nie znaleziono).
+pub fn make(p: int, sel: int, name: string, flags: i32) -> i32 is
+    return selection_make(p, sel, name, flags)
+end
+
+;; Rozwija selekcje do plaskiej listy Id solvable'i.
+pub fn solvables(p: int, sel: int) -> [i32] is
+    let pkgs: int = queue::new()
+    selection_solvables(p, sel, pkgs)
+    let out: [i32] = queue::to_array(pkgs)
+    queue::destroy(pkgs)
+    return out
+end
+
+;; Id solvable'i pasujacych do wzorca (np. "lib*" z SELECTION_NAME | SELECTION_GLOB).
+pub fn find(p: int, pattern: string, flags: i32) -> [i32] is
+    let sel: int = queue::new()
+    let rc: i32 = selection_make(p, sel, pattern, flags)
+    let out: [i32] = solvables(p, sel)
+    queue::destroy(sel)
+    return out
+end
