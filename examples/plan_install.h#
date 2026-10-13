@@ -1,0 +1,48 @@
+mod lib
+
+;; Najkrotsza sciezka: repo "z palca" -> resolve_install() -> lista krokow.
+;; Dodatkowo: instalacja po globie ("lib*") przez job::install_glob.
+fn main() is
+    let p: int = lib::pool::new()
+    lib::pool::set_arch(p, "x86_64")
+
+    let system: int = lib::repo::new(p, "system")
+    lib::pool::set_installed_repo(p, system)
+    lib::repo::finalize(system)
+
+    let available: int = lib::repo::new(p, "available")
+    let foo: lib::repo::Pkg = lib::repo::new_pkg("foo", "1.0", "1", "x86_64")
+    let mut bar: lib::repo::Pkg = lib::repo::new_pkg("bar", "2.0", "1", "x86_64")
+    bar.requires = ["foo"]
+    let libz: lib::repo::Pkg = lib::repo::new_pkg("libz", "1.3", "1", "x86_64")
+
+    let res = lib::repo::add_packages(p, available, [foo, bar, libz])
+    if !lib::result::is_ok(res) is
+        write("Blad wczytywania pakietow: " + lib::result::error_message(res))
+        return
+    end
+    lib::repo::finalize(available)
+
+    let plan = lib::transaction::resolve_install(p, ["bar"])
+    if !plan.ok is
+        write("Nie da sie zainstalowac:")
+        for msg in plan.problems is
+            write("  - " + msg)
+        end
+    else is
+        write("Plan (" + lib::transaction::count_steps(plan, "install") + " do instalacji):")
+        for line in lib::transaction::plan_lines(plan) is
+            write("  " + line)
+        end
+    end
+
+    ;; glob: wszystko co zaczyna sie od "lib"
+    let jobs: int = lib::queue::new()
+    let n: i32 = lib::job::install_glob(jobs, p, "lib*")
+    write("Dopasowano jobow dla lib*: " + n)
+    lib::queue::destroy(jobs)
+
+    lib::repo::destroy(available, false)
+    lib::repo::destroy(system, false)
+    lib::pool::destroy(p)
+end
