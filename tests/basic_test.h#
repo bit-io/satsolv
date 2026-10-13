@@ -16,7 +16,7 @@ fn test_queue_push_and_count() is
     assert_eq(lib::queue::get(q, 1), 20)
     assert_eq(lib::queue::get(q, 2), 30)
 
-    lib::queue::free(q)
+    lib::queue::destroy(q)
 end
 
 #[test]
@@ -30,7 +30,7 @@ fn test_queue_push2_and_to_array() is
     assert_eq(arr[0], 1)
     assert_eq(arr[3], 4)
 
-    lib::queue::free(q)
+    lib::queue::destroy(q)
 end
 
 ;; Odtworzenie sekwencji "queue_alloc_one" wielokrotnie — sprawdza, że
@@ -46,57 +46,57 @@ fn test_queue_grows_past_initial_capacity() is
     end
     assert_eq(lib::queue::count(q), 500)
     assert_eq(lib::queue::get(q, 499), 499)
-    lib::queue::free(q)
+    lib::queue::destroy(q)
 end
 
 ;; ── pool: internowanie stringów ──────────────────────────────────────────
 #[test]
 fn test_pool_str2id_roundtrip() is
-    let p: int = lib::pool::create()
-    let id: i32 = lib::pool::str2id(p, "foobar", true)
-    assert_eq(lib::pool::id2str(p, id), "foobar")
-    lib::pool::free(p)
+    let p: int = lib::pool::new()
+    let id: i32 = lib::pool::str_to_id(p, "foobar", true)
+    assert_eq(lib::pool::id_to_str(p, id), "foobar")
+    lib::pool::destroy(p)
 end
 
 ;; ── pool: porównanie wersji (przez Id, jak dotychczas) ───────────────────
 #[test]
 fn test_pool_evrcmp() is
-    let p: int = lib::pool::create()
-    let v1: i32 = lib::pool::str2id(p, "1.0-1", true)
-    let v2: i32 = lib::pool::str2id(p, "2.0-1", true)
-    let cmp: i32 = lib::pool::evrcmp(p, v1, v2)
+    let p: int = lib::pool::new()
+    let v1: i32 = lib::pool::str_to_id(p, "1.0-1", true)
+    let v2: i32 = lib::pool::str_to_id(p, "2.0-1", true)
+    let cmp: i32 = lib::pool::evr_compare(p, v1, v2)
     assert(cmp < 0)
-    lib::pool::free(p)
+    lib::pool::destroy(p)
 end
 
 ;; ── pool: porównanie wersji na gołych stringach (bez internowania) ───────
 #[test]
 fn test_pool_evrcmp_str() is
-    let p: int = lib::pool::create()
-    assert(lib::pool::evrcmp_str(p, "1.0-1", "2.0-1") < 0)
-    assert(lib::pool::evrcmp_str(p, "2.0-1", "2.0-1") == 0)
-    assert(lib::pool::evrcmp_str(p, "3.0-1", "2.0-1") > 0)
-    lib::pool::free(p)
+    let p: int = lib::pool::new()
+    assert(lib::pool::evr_compare_str(p, "1.0-1", "2.0-1") < 0)
+    assert(lib::pool::evr_compare_str(p, "2.0-1", "2.0-1") == 0)
+    assert(lib::pool::evr_compare_str(p, "3.0-1", "2.0-1") > 0)
+    lib::pool::destroy(p)
 end
 
 ;; ── pool: disttype wpływa na semantykę porównań ──────────────────────────
 #[test]
 fn test_pool_set_disttype() is
-    let p: int = lib::pool::create()
-    let old: i32 = lib::pool::set_disttype(p, lib::pool::DISTTYPE_DEB)
+    let p: int = lib::pool::new()
+    let old: i32 = lib::pool::set_disttype(p, DISTTYPE_DEB)
     assert(old >= 0)
-    lib::pool::free(p)
+    lib::pool::destroy(p)
 end
 
 ;; ── repo: priorytet czyta to, co zostało zapisane ────────────────────────
 #[test]
 fn test_repo_priority_roundtrip() is
-    let p: int = lib::pool::create()
-    let r: int = lib::repo::create(p, "test-repo")
+    let p: int = lib::pool::new()
+    let r: int = lib::repo::new(p, "test-repo")
     lib::repo::set_priority(r, 42, 7)
     assert_eq(lib::repo::get_priority(r), 42)
-    lib::repo::free(r, false)
-    lib::pool::free(p)
+    lib::repo::destroy(r, false)
+    lib::pool::destroy(p)
 end
 
 ;; ── repo::add_packages: walidacja odrzuca próbę wstrzyknięcia linii ──────
@@ -104,116 +104,111 @@ end
 ;; trafić do testcase_add_testtags — walidacja musi go odrzucić wcześniej.
 #[test]
 fn test_add_packages_rejects_newline_injection() is
-    let p: int = lib::pool::create()
-    let r: int = lib::repo::create(p, "available")
+    let p: int = lib::pool::new()
+    let r: int = lib::repo::new(p, "available")
 
     let evil: lib::repo::Pkg = lib::repo::new_pkg(
         "foo", "1.0\n#>=Pkg: zly 9.9 1 x86_64", "1", "x86_64"
     )
 
-    match lib::repo::add_packages(p, r, [evil]) is
-        lib::SatResult::Ok(rc) => is
-            assert(false)  ;; nie powinno się udać
-        end
-        lib::SatResult::Err(msg) => is
-            assert(msg != "")
-        end
+    let res3 = lib::repo::add_packages(p, r, [evil])
+    if lib::result::is_ok(res3) is
+        assert(false)  ;; nie powinno się udać
+    else is
+        let msg: string = lib::result::error_message(res3)
+        assert(msg != "")
     end
 
-    lib::repo::free(r, false)
-    lib::pool::free(p)
+    lib::repo::destroy(r, false)
+    lib::pool::destroy(p)
 end
 
 #[test]
 fn test_add_packages_rejects_space_in_name() is
-    let p: int = lib::pool::create()
-    let r: int = lib::repo::create(p, "available")
+    let p: int = lib::pool::new()
+    let r: int = lib::repo::new(p, "available")
     let bad: lib::repo::Pkg = lib::repo::new_pkg("foo bar", "1.0", "1", "x86_64")
 
-    match lib::repo::add_packages(p, r, [bad]) is
-        lib::SatResult::Ok(rc) => is
-            assert(false)
-        end
-        lib::SatResult::Err(msg) => is
-            assert(msg != "")
-        end
+    let res4 = lib::repo::add_packages(p, r, [bad])
+    if lib::result::is_ok(res4) is
+        assert(false)
+    else is
+        let msg: string = lib::result::error_message(res4)
+        assert(msg != "")
     end
 
-    lib::repo::free(r, false)
-    lib::pool::free(p)
+    lib::repo::destroy(r, false)
+    lib::pool::destroy(p)
 end
 
 ;; ── job: wersjonowany install (>=) ────────────────────────────────────────
 #[test]
 fn test_job_install_name_version() is
-    let p: int = lib::pool::create()
+    let p: int = lib::pool::new()
     let q: int = lib::queue::new()
 
-    match lib::job::install_name_version(q, p, "foo", ">=", "1.2") is
-        lib::SatResult::Ok(rel_id) => is
-            ;; ok — kolejka powinna dostać dwa wpisy (how, what)
-            assert_eq(lib::queue::count(q), 2)
-        end
-        lib::SatResult::Err(msg) => is
-            assert(false)
-        end
+    let res5 = lib::job::install_name_version(q, p, "foo", ">=", "1.2")
+    if lib::result::is_ok(res5) is
+        ;; ok — kolejka powinna dostać dwa wpisy (how, what)
+        assert_eq(lib::queue::count(q), 2)
+    else is
+        let msg: string = lib::result::error_message(res5)
+        assert(false)
     end
 
-    lib::queue::free(q)
-    lib::pool::free(p)
+    lib::queue::destroy(q)
+    lib::pool::destroy(p)
 end
 
 #[test]
 fn test_job_install_name_version_rejects_bad_op() is
-    let p: int = lib::pool::create()
+    let p: int = lib::pool::new()
     let q: int = lib::queue::new()
 
-    match lib::job::install_name_version(q, p, "foo", "~=", "1.2") is
-        lib::SatResult::Ok(rel_id) => is
-            assert(false)  ;; "~=" nie jest wspieranym operatorem
-        end
-        lib::SatResult::Err(msg) => is
-            assert(msg != "")
-        end
+    let res6 = lib::job::install_name_version(q, p, "foo", "~=", "1.2")
+    if lib::result::is_ok(res6) is
+        assert(false)  ;; "~=" nie jest wspieranym operatorem
+    else is
+        let msg: string = lib::result::error_message(res6)
+        assert(msg != "")
     end
 
-    lib::queue::free(q)
-    lib::pool::free(p)
+    lib::queue::destroy(q)
+    lib::pool::destroy(p)
 end
 
 ;; ── pełny scenariusz: repo "z palca" + install job + solve + transakcja ──
 #[test]
 fn test_full_install_scenario() is
-    let p: int = lib::pool::create()
+    let p: int = lib::pool::new()
     lib::pool::set_arch(p, "x86_64")
 
-    let system: int = lib::repo::create(p, "system")
-    lib::pool::set_installed(p, system)
-    lib::repo::internalize(system)
+    let system: int = lib::repo::new(p, "system")
+    lib::pool::set_installed_repo(p, system)
+    lib::repo::finalize(system)
 
-    let available: int = lib::repo::create(p, "available")
+    let available: int = lib::repo::new(p, "available")
     lib::repo::set_priority(available, 10, 0)
 
     let foo: lib::repo::Pkg = lib::repo::new_pkg("foo", "1.0", "1", "x86_64")
     let mut bar: lib::repo::Pkg = lib::repo::new_pkg("bar", "2.0", "1", "x86_64")
     bar.requires = ["foo"]
 
-    match lib::repo::add_packages(p, available, [foo, bar]) is
-        lib::SatResult::Ok(rc) => is end
-        lib::SatResult::Err(msg) => is
-            assert(false)
-        end
+    let res7 = lib::repo::add_packages(p, available, [foo, bar])
+    if !lib::result::is_ok(res7) is
+        let msg: string = lib::result::error_message(res7)
+        assert(false)
     end
-    lib::repo::internalize(available)
+    lib::repo::finalize(available)
 
-    lib::pool::createwhatprovides(p)
+    lib::pool::create_whatprovides(p)
 
     let jobs: int = lib::queue::new()
     lib::job::install_name(jobs, p, "bar")
 
-    let s: int = lib::solver::create(p)
+    let s: int = lib::solver::new(p)
     lib::solver::allow_downgrade(s, false)
-    let problems: i32 = lib::solver::solve(s, jobs)
+    let problems: i32 = lib::solver::run(s, jobs)
     assert_eq(problems, 0)
 
     let t: int = lib::transaction::create_from_solver(s)
@@ -223,13 +218,174 @@ fn test_full_install_scenario() is
 
     ;; classify() powinno zwrócić przynajmniej jedną klasę kroków
     ;; (rekordy po 4 pola: type_id/count/from_id/to_id, patrz mod transaction)
-    let classes: [lib::transaction::TransactionClass] = lib::transaction::classify_active(t)
+    let classes = lib::transaction::classify_active(t)
     assert(array_len(classes) >= 1)
 
-    lib::transaction::free(t)
-    lib::queue::free(jobs)
-    lib::solver::free(s)
-    lib::repo::free(available, false)
-    lib::repo::free(system, false)
-    lib::pool::free(p)
+    lib::transaction::destroy(t)
+    lib::queue::destroy(jobs)
+    lib::solver::destroy(s)
+    lib::repo::destroy(available, false)
+    lib::repo::destroy(system, false)
+    lib::pool::destroy(p)
+end
+
+;; ── result: odczyt SatResult bez match ───────────────────────────────────
+#[test]
+fn test_result_helpers() is
+    let p: int = lib::pool::new()
+    let q: int = lib::queue::new()
+    let ok = lib::job::install_name_version(q, p, "foo", ">=", "1.0")
+    assert(lib::result::is_ok(ok))
+    assert_eq(lib::result::error_message(ok), "")
+
+    let bad = lib::job::install_name_version(q, p, "foo", "~=", "1.0")
+    assert(!lib::result::is_ok(bad))
+    assert(lib::result::error_message(bad) != "")
+    assert_eq(lib::result::value(bad), -1)
+
+    lib::queue::destroy(q)
+    lib::pool::destroy(p)
+end
+
+;; ── pool: flagi i rootdir ────────────────────────────────────────────────
+#[test]
+fn test_pool_options_roundtrip() is
+    let p: int = lib::pool::new()
+    lib::pool::set_option(p, POOL_FLAG_PROMOTEEPOCH, true)
+    assert(lib::pool::get_option(p, POOL_FLAG_PROMOTEEPOCH))
+    lib::pool::set_option(p, POOL_FLAG_PROMOTEEPOCH, false)
+    assert(!lib::pool::get_option(p, POOL_FLAG_PROMOTEEPOCH))
+    lib::pool::destroy(p)
+end
+
+;; ── transaction::type_name ───────────────────────────────────────────────
+#[test]
+fn test_transaction_type_name() is
+    assert_eq(lib::transaction::type_name(0x20), "install")
+    assert_eq(lib::transaction::type_name(0x10), "erase")
+    assert_eq(lib::transaction::type_name(0x24), "upgrade")
+    assert_eq(lib::transaction::type_name(0x7f), "other")
+end
+
+;; Pomocnik: pool z repo "available" (foo 1.0, bar 2.0 wymaga foo, libz 1.3).
+fn make_test_pool() -> int is
+    let p: int = lib::pool::new()
+    lib::pool::set_arch(p, "x86_64")
+    let system: int = lib::repo::new(p, "system")
+    lib::pool::set_installed_repo(p, system)
+    lib::repo::finalize(system)
+
+    let available: int = lib::repo::new(p, "available")
+    let foo: lib::repo::Pkg = lib::repo::new_pkg("foo", "1.0", "1", "x86_64")
+    let mut bar: lib::repo::Pkg = lib::repo::new_pkg("bar", "2.0", "1", "x86_64")
+    bar.requires = ["foo"]
+    let libz: lib::repo::Pkg = lib::repo::new_pkg("libz", "1.3", "1", "x86_64")
+    let res = lib::repo::add_packages(p, available, [foo, bar, libz])
+    assert(lib::result::is_ok(res))
+    lib::repo::finalize(available)
+    lib::pool::create_whatprovides(p)
+    return p
+end
+
+;; ── select: glob po nazwach ──────────────────────────────────────────────
+#[test]
+fn test_select_find_glob() is
+    let p: int = make_test_pool()
+    let ids: [i32] = lib::select::find(p, "lib*", SELECTION_NAME | SELECTION_GLOB)
+    assert_eq(array_len(ids), 1)
+    assert(lib::pool::solvable_to_str(p, ids[0]) != "")
+    lib::pool::destroy(p)
+end
+
+;; ── job::install_glob dokleja pary how/what ──────────────────────────────
+#[test]
+fn test_job_install_glob() is
+    let p: int = make_test_pool()
+    let q: int = lib::queue::new()
+    let n: i32 = lib::job::install_glob(q, p, "b*")
+    assert_eq(n, 1)
+    assert_eq(lib::queue::count(q), 2)
+    let none: i32 = lib::job::install_glob(q, p, "zzz*")
+    assert_eq(none, 0)
+    lib::queue::destroy(q)
+    lib::pool::destroy(p)
+end
+
+;; ── transaction::resolve_install: gotowy plan ────────────────────────────
+#[test]
+fn test_resolve_install_plan() is
+    let p: int = make_test_pool()
+    let plan = lib::transaction::resolve_install(p, ["bar"])
+    assert(plan.ok)
+    assert(array_len(plan.steps) >= 2)
+    lib::pool::destroy(p)
+end
+
+#[test]
+fn test_resolve_install_missing_package_reports_problem() is
+    let p: int = make_test_pool()
+    let plan = lib::transaction::resolve_install(p, ["nie-ma-takiego"])
+    assert(!plan.ok)
+    assert(array_len(plan.problems) >= 1)
+    lib::pool::destroy(p)
+end
+
+;; ── repo::write_solv_file / add_solv_file: round-trip ────────────────────
+#[test]
+fn test_solv_file_roundtrip() is
+    let p: int = make_test_pool()
+    let r: int = lib::repo::new(p, "copy-source")
+    let pk: lib::repo::Pkg = lib::repo::new_pkg("baz", "0.1", "1", "x86_64")
+    let res = lib::repo::add_packages(p, r, [pk])
+    assert(lib::result::is_ok(res))
+    lib::repo::finalize(r)
+
+    let path: string = "/tmp/satsolv_roundtrip_test.solv"
+    let w = lib::repo::write_solv_file(p, r, path)
+    assert(lib::result::is_ok(w))
+
+    let p2: int = lib::pool::new()
+    let r2: int = lib::repo::new(p2, "loaded")
+    let l = lib::repo::add_solv_file(p2, r2, path)
+    assert(lib::result::is_ok(l))
+
+    lib::pool::destroy(p2)
+    lib::pool::destroy(p)
+end
+
+;; ── queue: push_all / has_value / is_empty ───────────────────────────────
+#[test]
+fn test_queue_helpers() is
+    let q: int = lib::queue::new()
+    assert(lib::queue::is_empty(q))
+    lib::queue::push_all(q, [10, 20, 30])
+    assert_eq(lib::queue::count(q), 3)
+    assert(lib::queue::has_value(q, 20))
+    assert(!lib::queue::has_value(q, 99))
+    assert(!lib::queue::is_empty(q))
+    lib::queue::destroy(q)
+end
+
+;; ── job::install_names: kilka pakietow naraz ─────────────────────────────
+#[test]
+fn test_job_install_names() is
+    let p: int = make_test_pool()
+    let q: int = lib::queue::new()
+    lib::job::install_names(q, p, ["foo", "bar"])
+    assert_eq(lib::queue::count(q), 4)
+    lib::queue::destroy(q)
+    lib::pool::destroy(p)
+end
+
+;; ── transaction: plan_lines / count_steps ────────────────────────────────
+#[test]
+fn test_plan_lines_and_counts() is
+    let p: int = make_test_pool()
+    let plan = lib::transaction::resolve_install(p, ["bar"])
+    assert(plan.ok)
+    let lines: [string] = lib::transaction::plan_lines(plan)
+    assert_eq(array_len(lines), array_len(plan.steps))
+    assert_eq(lib::transaction::count_steps(plan, "install"), array_len(plan.steps))
+    assert_eq(lib::transaction::count_steps(plan, "erase"), 0)
+    lib::pool::destroy(p)
 end
