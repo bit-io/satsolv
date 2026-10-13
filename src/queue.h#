@@ -1,0 +1,142 @@
+pub const STRUCT_SIZE: int = 32
+
+;; UWAGA PLATFORMOWA: powyższy layout/rozmiar zakłada 64-bitowe (LP64)
+;; wskaźniki — prawdziwe dla x86_64, aarch64 i riscv64 (jedyne natywne
+;; cele kompilatora H#, dla których w ogóle ma sens linkowanie z
+;; natywnym libsolv.so/.a). H# umie też kompilować na wasm32 (32-bitowe
+;; wskaźniki), gdzie te offsety byłyby błędne i cicho psułyby pamięć —
+;; ale wasm32 i tak nie potrafi zlinkować natywnej biblioteki C w
+;; standardowy sposób, więc to nie jest realny scenariusz użycia tej
+;; biblioteki. Mimo to `new()` poniżej weryfikuje to założenie w
+;; runtime zamiast po cichu ufać, patrz `assert_lp64_layout`.
+;;
+;; Ta biblioteka jest wspierana WYŁĄCZNIE na 64-bitowych celach.
+
+;; Samotest layoutu: `queue_init()` to prawdziwy, skompilowany kod
+;; libsolv — na LP64 zapisuje NULL (8 zerowych bajtów) na offsecie 0
+;; (elements) i offsecie 16 (alloc), oraz 0 na offsecie 8 (count) i 24
+;; (left). To niezależny test: jeśli rzeczywisty layout struct Queue
+;; na tej platformie różni się od założeń powyżej (np. 32-bitowe
+;; wskaźniki), przynajmniej jedno z tych czterech pól odczytane pod
+;; ZAŁOŻONYM przez nas offsetem prawie na pewno NIE wyzeruje się
+;; dokładnie tam, gdzie tego oczekujemy — nie jest to dowód
+;; matematyczny, ale w praktyce bardzo skuteczna siatka bezpieczeństwa
+;; (żeby przypadkiem przejść, "obcy" bajt musiałby akurat wylądować
+;; jako czyste zero na wszystkich 4 sprawdzanych polach).
+fn assert_lp64_layout(q: int) is
+    let mut ok: bool = true
+    unsafe is
+        if ptr_read_i64(q, 0)  != 0 is ok = false end
+        if ptr_read_i32(q, 8)  != 0 is ok = false end
+        if ptr_read_i64(q, 16) != 0 is ok = false end
+        if ptr_read_i32(q, 24) != 0 is ok = false end
+    end
+    if !ok is
+        panic("satsolv: layout struct Queue nie zgadza sie z zalozeniem LP64 " +
+              "(64-bitowe wskazniki). Ta platforma (prawdopodobnie 32-bitowa " +
+              "albo wasm32) nie jest wspierana przez satsolv - zobacz README.md, " +
+              "sekcja 'Uwagi techniczne'.")
+    end
+end
+
+;; Alokuje i inicjalizuje nową, pustą kolejkę. Pamięć jest zarządzana
+;; refcountingiem (arc_alloc) — zwolnij jawnie przez queue::destroy()
+;; kiedy libsolv nie potrzebuje już danej kolejki.
+pub fn new() -> int is
+    let mut q: int = 0
+    unsafe is
+        q = arc_alloc(STRUCT_SIZE)
+    end
+    queue_init(q)
+    assert_lp64_layout(q)
+    return q
+end
+
+pub fn destroy(q: int) is
+    queue_free(q)
+end
+
+pub fn count(q: int) -> i32 is
+    let mut n: i32 = 0
+    unsafe is
+        n = ptr_read_i32(q, 8)
+    end
+    return n
+end
+
+fn slots_left(q: int) -> i32 is
+    let mut n: i32 = 0
+    unsafe is
+        n = ptr_read_i32(q, 24)
+    end
+    return n
+end
+
+pub fn get(q: int, idx: i32) -> i32 is
+    let mut v: i32 = 0
+    unsafe is
+        let elems: int = ptr_read_ptr(q, 0)
+        v = ptr_read_i32(elems, idx * 4)
+    end
+    return v
+end
+
+;; Odtwarza `queue_push` z queue.h (static inline w libsolv => brak
+;; eksportowanego symbolu). `queue_alloc_one` (rozrost bufora), którego
+;; tu używamy, JEST prawdziwym, zlinkowanym kodem libsolv.
+pub fn push(q: int, id: i32) is
+    if slots_left(q) == 0 is
+        queue_alloc_one(q)
+    end
+    unsafe is
+        let elems: int = ptr_read_ptr(q, 0)
+        let n:     i32 = ptr_read_i32(q, 8)
+        ptr_write_i32(elems, n * 4, id)
+        ptr_write_i32(q, 8, n + 1)
+        ptr_write_i32(q, 24, ptr_read_i32(q, 24) - 1)
+    end
+end
+
+;; libsolv koduje "joby" solvera jako pary (how, what) w jednej kolejce —
+;; to skrót na dwa push() pod rząd.
+pub fn push2(q: int, a: i32, b: i32) is
+    push(q, a)
+    push(q, b)
+end
+
+;; Zwraca zawartość kolejki jako zwykłą tablicę H# — wygodne do
+;; iterowania po wynikach (np. queue::to_array(problems_queue)).
+pub fn to_array(q: int) -> [i32] is
+    let n: i32 = count(q)
+    let mut out: [i32] = []
+    let mut i: i32 = 0
+    while i < n is
+        out = array_push(out, get(q, i))
+        i += 1
+    end
+    return out
+end
+
+;; Dokleja wszystkie Id z tablicy.
+pub fn push_all(q: int, ids: [i32]) is
+    for id in ids is
+        push(q, id)
+    end
+end
+
+pub fn is_empty(q: int) -> bool is
+    return count(q) == 0
+end
+
+;; Czy kolejka zawiera dana wartosc (liniowo).
+pub fn has_value(q: int, id: i32) -> bool is
+    let n: i32 = count(q)
+    let mut i: i32 = 0
+    while i < n is
+        if get(q, i) == id is
+            return true
+        end
+        i += 1
+    end
+    return false
+end
