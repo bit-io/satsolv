@@ -1,0 +1,176 @@
+pub const SOLVABLE:          i32 = 0x01
+pub const SOLVABLE_NAME:     i32 = 0x02
+pub const SOLVABLE_PROVIDES: i32 = 0x03
+pub const SOLVABLE_ONE_OF:   i32 = 0x04
+pub const SOLVABLE_REPO:     i32 = 0x05
+pub const SOLVABLE_ALL:      i32 = 0x06
+pub const SELECTMASK:        i32 = 0xff
+
+;; -- SOLVER_JOBMASK: akcja (drugi bajt) --
+pub const NOOP:            i32 = 0x0000
+pub const JOB_INSTALL:         i32 = 0x0100
+pub const JOB_ERASE:           i32 = 0x0200
+pub const UPDATE:          i32 = 0x0300
+pub const WEAKENDEPS:      i32 = 0x0400
+pub const MULTIVERSION:    i32 = 0x0500
+pub const LOCK:            i32 = 0x0600
+pub const DISTUPGRADE:     i32 = 0x0700
+pub const VERIFY:          i32 = 0x0800
+pub const DROP_ORPHANED:   i32 = 0x0900
+pub const USERINSTALLED:   i32 = 0x0a00
+pub const ALLOWUNINSTALL:  i32 = 0x0b00
+pub const FAVOR:           i32 = 0x0c00
+pub const DISFAVOR:        i32 = 0x0d00
+pub const BLACKLIST:       i32 = 0x0e00
+pub const EXCLUDEFROMWEAK: i32 = 0x1000
+pub const JOBMASK:         i32 = 0xff00
+
+;; -- flagi dodatkowe (górne bajty) --
+pub const WEAK:       i32 = 0x010000
+pub const ESSENTIAL:  i32 = 0x020000
+pub const CLEANDEPS:  i32 = 0x040000
+pub const ORUPDATE:   i32 = 0x080000
+pub const FORCEBEST:  i32 = 0x100000
+pub const TARGETED:   i32 = 0x200000
+pub const NOTBYUSER:  i32 = 0x400000
+
+pub fn install_name(q: int, p: int, name: string) is
+    let id: i32 = pool::str_to_id(p, name, true)
+    queue::push2(q, SOLVABLE_NAME | JOB_INSTALL, id)
+end
+
+pub fn erase_name(q: int, p: int, name: string) is
+    let id: i32 = pool::str_to_id(p, name, true)
+    queue::push2(q, SOLVABLE_NAME | JOB_ERASE, id)
+end
+
+pub fn update_name(q: int, p: int, name: string) is
+    let id: i32 = pool::str_to_id(p, name, true)
+    queue::push2(q, SOLVABLE_NAME | UPDATE, id)
+end
+
+;; Parsuje operator relacji wersji na flagi REL_* (src/pool.h).
+;; Wspierane: "=", "==", ">", "<", ">=", "<=", "!=".
+fn parse_rel_op(op: string) -> SatResult<i32> is
+    if op == "=" || op == "==" is return SatResult::Ok(REL_EQ) end
+    if op == ">"               is return SatResult::Ok(REL_GT) end
+    if op == "<"               is return SatResult::Ok(REL_LT) end
+    if op == ">="              is return SatResult::Ok(REL_GT | REL_EQ) end
+    if op == "<="              is return SatResult::Ok(REL_LT | REL_EQ) end
+    if op == "!="              is return SatResult::Ok(REL_GT | REL_LT) end
+    return SatResult::Err("nieznany operator porownania wersji: '" + op +
+                           "' (oczekiwano =, ==, >, <, >=, <=, !=)")
+end
+
+;; Wersjonowany odpowiednik install_name(), np.
+;; `job::install_name_version(q, p, "foo", ">=", "1.2")` == "foo >= 1.2".
+;; Zwraca Id relacji (przydatne do debugowania przez pool::job_to_str)
+;; albo błąd, jeśli `op` nie jest rozpoznanym operatorem.
+pub fn install_name_version(q: int, p: int, name: string, op: string, version: string) -> SatResult<i32> is
+    match parse_rel_op(op) is
+        SatResult::Err(msg) => is
+            return SatResult::Err(msg)
+        end
+        SatResult::Ok(flags) => is
+            let name_id: i32 = pool::str_to_id(p, name, true)
+            let evr_id:  i32 = pool::str_to_id(p, version, true)
+            let rel_id:  i32 = pool::rel_to_id(p, name_id, evr_id, flags)
+            queue::push2(q, SOLVABLE_NAME | JOB_INSTALL, rel_id)
+            return SatResult::Ok(rel_id)
+        end
+    end
+end
+
+pub fn erase_name_version(q: int, p: int, name: string, op: string, version: string) -> SatResult<i32> is
+    match parse_rel_op(op) is
+        SatResult::Err(msg) => is
+            return SatResult::Err(msg)
+        end
+        SatResult::Ok(flags) => is
+            let name_id: i32 = pool::str_to_id(p, name, true)
+            let evr_id:  i32 = pool::str_to_id(p, version, true)
+            let rel_id:  i32 = pool::rel_to_id(p, name_id, evr_id, flags)
+            queue::push2(q, SOLVABLE_NAME | JOB_ERASE, rel_id)
+            return SatResult::Ok(rel_id)
+        end
+    end
+end
+
+;; Dokleja do `q` joby `action` (JOB_INSTALL/JOB_ERASE/UPDATE) dla
+;; wszystkiego, co pasuje do wzorca `pattern` wg flag SELECTION_*.
+;; Zwraca liczbe dolozonych jobow (0 = nic nie pasuje).
+pub fn push_selection(q: int, p: int, pattern: string, sel_flags: i32, action: i32) -> i32 is
+    let sel: int = queue::new()
+    let rc: i32 = selection_make(p, sel, pattern, sel_flags)
+    let cnt: i32 = queue::count(sel)
+    let mut i: i32 = 0
+    while i + 1 < cnt is
+        queue::push2(q, queue::get(sel, i) | action, queue::get(sel, i + 1))
+        i += 2
+    end
+    queue::destroy(sel)
+    return cnt / 2
+end
+
+;; "lib*" -> zainstaluj wszystko o nazwie pasujacej do globa.
+pub fn install_glob(q: int, p: int, pattern: string) -> i32 is
+    return push_selection(q, p, pattern, SELECTION_NAME | SELECTION_GLOB, JOB_INSTALL)
+end
+
+pub fn erase_glob(q: int, p: int, pattern: string) -> i32 is
+    return push_selection(q, p, pattern, SELECTION_NAME | SELECTION_GLOB, JOB_ERASE)
+end
+
+pub fn update_glob(q: int, p: int, pattern: string) -> i32 is
+    return push_selection(q, p, pattern, SELECTION_NAME | SELECTION_GLOB, UPDATE)
+end
+
+pub fn install_provides(q: int, p: int, dep: string) is
+    let id: i32 = pool::str_to_id(p, dep, true)
+    queue::push2(q, SOLVABLE_PROVIDES | JOB_INSTALL, id)
+end
+
+pub fn install_solvable(q: int, solvable_id: i32) is
+    queue::push2(q, SOLVABLE | JOB_INSTALL, solvable_id)
+end
+
+pub fn erase_solvable(q: int, solvable_id: i32) is
+    queue::push2(q, SOLVABLE | JOB_ERASE, solvable_id)
+end
+
+pub fn lock_solvable(q: int, solvable_id: i32) is
+    queue::push2(q, SOLVABLE | LOCK, solvable_id)
+end
+
+pub fn verify_all(q: int) is
+    queue::push2(q, SOLVABLE_ALL | VERIFY, 0)
+end
+
+pub fn distupgrade_all(q: int) is
+    queue::push2(q, SOLVABLE_ALL | DISTUPGRADE, 0)
+end
+
+pub fn update_all(q: int) is
+    queue::push2(q, SOLVABLE_ALL | UPDATE, 0)
+end
+
+;; Instaluj kazdy pakiet z listy (po nazwie).
+pub fn install_names(q: int, p: int, names: [string]) is
+    for n in names is
+        install_name(q, p, n)
+    end
+end
+
+;; Usun kazdy pakiet z listy (po nazwie).
+pub fn erase_names(q: int, p: int, names: [string]) is
+    for n in names is
+        erase_name(q, p, n)
+    end
+end
+
+;; Zaktualizuj kazdy pakiet z listy (po nazwie).
+pub fn update_names(q: int, p: int, names: [string]) is
+    for n in names is
+        update_name(q, p, n)
+    end
+end
