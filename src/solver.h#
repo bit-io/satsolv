@@ -1,0 +1,116 @@
+pub const FLAG_ALLOW_DOWNGRADE:          i32 = 1
+pub const FLAG_ALLOW_ARCHCHANGE:         i32 = 2
+pub const FLAG_ALLOW_VENDORCHANGE:       i32 = 3
+pub const FLAG_ALLOW_UNINSTALL:          i32 = 4
+pub const FLAG_NO_UPDATEPROVIDE:         i32 = 5
+pub const FLAG_SPLITPROVIDES:            i32 = 6
+pub const FLAG_IGNORE_RECOMMENDED:       i32 = 7
+pub const FLAG_ADD_ALREADY_RECOMMENDED:  i32 = 8
+pub const FLAG_NO_INFARCHCHECK:          i32 = 9
+pub const FLAG_ALLOW_NAMECHANGE:         i32 = 10
+pub const FLAG_KEEP_EXPLICIT_OBSOLETES:  i32 = 11
+pub const FLAG_BEST_OBEY_POLICY:         i32 = 12
+pub const FLAG_NO_AUTOTARGET:            i32 = 13
+pub const FLAG_DUP_ALLOW_DOWNGRADE:      i32 = 14
+pub const FLAG_DUP_ALLOW_ARCHCHANGE:     i32 = 15
+pub const FLAG_DUP_ALLOW_VENDORCHANGE:   i32 = 16
+pub const FLAG_DUP_ALLOW_NAMECHANGE:     i32 = 17
+pub const FLAG_KEEP_ORPHANS:             i32 = 18
+pub const FLAG_BREAK_ORPHANS:            i32 = 19
+pub const FLAG_FOCUS_INSTALLED:          i32 = 20
+pub const FLAG_YUM_OBSOLETES:            i32 = 21
+pub const FLAG_NEED_UPDATEPROVIDE:       i32 = 22
+pub const FLAG_URPM_REORDER:             i32 = 23
+pub const FLAG_FOCUS_BEST:               i32 = 24
+pub const FLAG_STRONG_RECOMMENDS:        i32 = 25
+pub const FLAG_INSTALL_ALSO_UPDATES:     i32 = 26
+pub const FLAG_ONLY_NAMESPACE_RECOMMENDED: i32 = 27
+pub const FLAG_STRICT_REPO_PRIORITY:     i32 = 28
+pub const FLAG_FOCUS_NEW:                i32 = 29
+
+pub fn new(p: int) -> int is
+    return solver_create(p)
+end
+
+pub fn destroy(s: int) is
+    solver_free(s)
+end
+
+;; Ustawia flagę solvera (patrz stałe FLAG_* powyżej). Zwraca
+;; POPRZEDNIĄ wartość flagi (tak działa solver_set_flag w libsolv).
+pub fn set_flag_value(s: int, flag: i32, value: bool) -> i32 is
+    let v: i32 = if value then 1 else 0
+    return solver_set_flag(s, flag, v)
+end
+
+pub fn get_flag_value(s: int, flag: i32) -> bool is
+    return solver_get_flag(s, flag) != 0
+end
+
+;; Wygodne skróty dla najczęściej ustawianych flag.
+pub fn allow_downgrade(s: int, value: bool) -> i32 is
+    return set_flag_value(s, FLAG_ALLOW_DOWNGRADE, value)
+end
+
+pub fn allow_vendorchange(s: int, value: bool) -> i32 is
+    return set_flag_value(s, FLAG_ALLOW_VENDORCHANGE, value)
+end
+
+pub fn allow_uninstall(s: int, value: bool) -> i32 is
+    return set_flag_value(s, FLAG_ALLOW_UNINSTALL, value)
+end
+
+pub fn best_obey_policy(s: int, value: bool) -> i32 is
+    return set_flag_value(s, FLAG_BEST_OBEY_POLICY, value)
+end
+
+pub fn keep_orphans(s: int, value: bool) -> i32 is
+    return set_flag_value(s, FLAG_KEEP_ORPHANS, value)
+end
+
+;; Zwraca liczbę nierozwiązanych problemów (0 = sukces, joby spełnione).
+pub fn run(s: int, job_queue: int) -> i32 is
+    return solver_solve(s, job_queue)
+end
+
+pub fn count_problems(s: int) -> i32 is
+    return solver_problem_count(s)
+end
+
+;; Iteruj: `let mut pr: i32 = 0  while true is pr = solver::next_problem_id(s, pr) if pr == 0 is break end ... end`
+pub fn next_problem_id(s: int, prev: i32) -> i32 is
+    return solver_next_problem(s, prev)
+end
+
+pub fn count_solutions(s: int, problem: i32) -> i32 is
+    return solver_solution_count(s, problem)
+end
+
+pub fn problem_to_str(s: int, problem: i32) -> string is
+    return solver_problem2str(s, problem)
+end
+
+;; Zwraca Id-y reguł powodujących dany problem (nowa kolejka —
+;; pamiętaj o queue::destroy() po użyciu).
+pub fn find_all_problem_rules(s: int, problem: i32) -> int is
+    let q: int = queue::new()
+    solver_findallproblemrules(s, problem, q)
+    return q
+end
+
+;; Gotowa lista opisów wszystkich problemów jako [string] — najwygodniejsze
+;; do wyświetlenia użytkownikowi po nieudanym run().
+pub fn all_problems_as_strings(s: int) -> [string] is
+    let mut out: [string] = []
+    let mut pr: i32 = 0
+    let mut go: bool = true
+    while go is
+        pr = next_problem_id(s, pr)
+        if pr == 0 is
+            go = false
+        else is
+            out = array_push(out, problem_to_str(s, pr))
+        end
+    end
+    return out
+end
