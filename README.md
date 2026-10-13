@@ -51,6 +51,59 @@ H# próbują najpierw `pkg-config --static --libs libsolv` (odpowiednio
 `libsolvext`), a jeśli `pkg-config` nie znajdzie pliku `.pc`, spadają na
 `-lsolv` / `-lsolvext`.
 
+### Błąd `cannot find -lsolv` / "only a shared libsolv.so was found"
+
+`satsolv` linkuje libsolv **statycznie** (`link => static`), a pakiety `-dev`
+większości dystrybucji dają tylko `libsolv.so`. Zbuduj statyczne archiwa
+(z `-fPIC`, bo `.hlib` jest linkowany jako biblioteka współdzielona) do
+lokalnego prefiksu — jednorazowo:
+
+```sh
+# Debian/Ubuntu: nagłówki potrzebne do budowy
+sudo apt install git cmake build-essential pkg-config libexpat1-dev zlib1g-dev liblzma-dev
+
+scripts/install-static-libsolv.sh        # -> ~/.hackeros/native/libsolv/lib/libsolv{,ext}.a
+source scripts/env.sh                    # PKG_CONFIG_PATH, LIBRARY_PATH, CPATH
+bit
+```
+
+(`PREFIX=/opt/solv scripts/install-static-libsolv.sh` zmienia prefiks;
+`SOLV_COMPRESSION=1` dodaje obsługę `.bz2`/`.zst`.)
+
+**Kolejność linkowania:** w `src/ffi.h#` blok `libsolvext` stoi przed `libsolv`
+— `libsolvext.a` używa symboli `libsolv.a`; w odwrotnej kolejności część
+symboli zostaje nierozwiązana w `.hlib`.
+
+**Programy końcowe** używające loaderów rpm-md/deb/arch (`repo::add_rpmmd_file`
+itd.) muszą dolinkować zależności libsolvext, których `.hlib` nie wlicza
+(`libexpat.a` z dystrybucji nie jest PIC, więc nie da się go wpiąć do `.hlib`):
+
+```sh
+export LDFLAGS="-lexpat -lz -llzma"
+```
+
+Programy, które nie wołają loaderów, tego nie potrzebują.
+
+## Struktura plików
+
+```
+src/lib.h#          fasada: enum SatResult + `mod ...` (kolejność = kolejność łączenia)
+src/ffi.h#          wszystkie `extern` (libc, libsolvext, libsolv) — kolejność ma znaczenie
+src/result.h#       odczyt SatResult bez match
+src/pool.h#         Pool, Id/stringi, wersje, flagi, rootdir
+src/queue.h#        Queue w czystym H#
+src/repo.h#         Repo, loadery, zapis .solv
+src/select.h#       selekcje (nazwy/glob)
+src/job.h#          zadania solvera
+src/solver.h#       Solver
+src/transaction.h#  kroki transakcji, Plan, resolve_install
+scripts/            install-static-libsolv.sh, env.sh, check-symbols.py
+```
+
+Przed zmianami w nazwach funkcji uruchom `scripts/check-symbols.py` (opcje
+`--ver`, `--archives` w nagłówku skryptu) — wyłapuje kolizje z symbolami
+libsolv, które psuły kompilację w 0.1.0.
+
 ## Instalacja
 
 ```sh
@@ -63,47 +116,45 @@ bytes add satsolv
 use "satsolv" from "sv"
 
 fn main() is
-    let p: int = sv::pool::create()
+    let p: int = sv::pool::new()
     sv::pool::set_arch(p, "x86_64")
 
     ;; repo "systemowe" (nic zainstalowanego na start)
-    let system: int = sv::repo::create(p, "system")
-    sv::pool::set_installed(p, system)
-    sv::repo::internalize(system)
+    let system: int = sv::repo::new(p, "system")
+    sv::pool::set_installed_repo(p, system)
+    sv::repo::finalize(system)
 
     ;; repo "dostępne" — dwa pakiety zbudowane "z palca"
-    let available: int = sv::repo::create(p, "available")
+    let available: int = sv::repo::new(p, "available")
     sv::repo::set_priority(available, 10, 0)
 
     let foo: sv::repo::Pkg = sv::repo::new_pkg("foo", "1.0", "1", "x86_64")
     let mut bar: sv::repo::Pkg = sv::repo::new_pkg("bar", "2.0", "1", "x86_64")
     bar.requires = ["foo >= 1.0"]
 
-    match sv::repo::add_packages(p, available, [foo, bar]) is
-        sv::SatResult::Ok(rc) => is end
-        sv::SatResult::Err(msg) => is
-            write("Blad wczytywania pakietow: " + msg)
-            return
-        end
+    let res8 = sv::repo::add_packages(p, available, [foo, bar])
+    if !sv::result::is_ok(res8) is
+        let msg: string = sv::result::error_message(res8)
+        write("Blad wczytywania pakietow: " + msg)
+        return
     end
-    sv::repo::internalize(available)
+    sv::repo::finalize(available)
 
-    sv::pool::createwhatprovides(p)
+    sv::pool::create_whatprovides(p)
 
     ;; job: zainstaluj "bar" w wersji >= 1.5 (a solver dociągnie "foo")
     let jobs: int = sv::queue::new()
-    match sv::job::install_name_version(jobs, p, "bar", ">=", "1.5") is
-        sv::SatResult::Ok(rel_id) => is end
-        sv::SatResult::Err(msg) => is
-            write("Blad joba: " + msg)
-            return
-        end
+    let res9 = sv::job::install_name_version(jobs, p, "bar", ">=", "1.5")
+    if !sv::result::is_ok(res9) is
+        let msg: string = sv::result::error_message(res9)
+        write("Blad joba: " + msg)
+        return
     end
 
-    let s: int = sv::solver::create(p)
+    let s: int = sv::solver::new(p)
     sv::solver::allow_downgrade(s, false)
 
-    let problems: i32 = sv::solver::solve(s, jobs)
+    let problems: i32 = sv::solver::run(s, jobs)
 
     if problems > 0 is
         for msg in sv::solver::all_problems_as_strings(s) is
@@ -114,27 +165,65 @@ fn main() is
         for sid in sv::transaction::installed_result(t) is
             write(sv::pool::solvable_to_str(p, sid))
         end
-        sv::transaction::free(t)
+        sv::transaction::destroy(t)
     end
 
-    sv::queue::free(jobs)
-    sv::solver::free(s)
-    sv::repo::free(available, false)
-    sv::repo::free(system, false)
-    sv::pool::free(p)
+    sv::queue::destroy(jobs)
+    sv::solver::destroy(s)
+    sv::repo::destroy(available, false)
+    sv::repo::destroy(system, false)
+    sv::pool::destroy(p)
 end
 ```
+
+## Zmiana nazw w 0.2.0 (migracja z 0.1.0)
+
+Funkcje-wrappery w `mod X` są w kompilatorze H# mangle'owane do `X_nazwa`,
+więc `pool::create` stawało się `pool_create` — **dokładnie tym samym
+symbolem co C-owy `pool_create` z libsolv** (`extern`). Skutek: wrapper
+wołał sam siebie (nieskończona rekurencja) albo kompilacja kończyła się
+błędem `Incorrect number of arguments passed to called function!`.
+Wszystkie 26 kolidujących nazw zmieniono:
+
+| było | jest |
+|---|---|
+| `pool::create` / `free` | `pool::new` / `destroy` |
+| `pool::set_installed` | `pool::set_installed_repo` |
+| `pool::createwhatprovides` | `pool::create_whatprovides` |
+| `pool::str2id` / `id2str` / `dep2str` / `rel2id` | `pool::str_to_id` / `id_to_str` / `dep_to_str` / `rel_to_id` |
+| `pool::evrcmp` / `evrcmp_str` | `pool::evr_compare` / `evr_compare_str` |
+| `pool::errstr` | `pool::error_string` |
+| `queue::free` | `queue::destroy` |
+| `repo::create` / `free` / `internalize` | `repo::new` / `destroy` / `finalize` |
+| `solver::create` / `free` | `solver::new` / `destroy` |
+| `solver::set_flag` / `get_flag` | `solver::set_flag_value` / `get_flag_value` |
+| `solver::solve` | `solver::run` |
+| `solver::problem_count` / `next_problem` / `solution_count` | `solver::count_problems` / `next_problem_id` / `count_solutions` |
+| `transaction::free` | `transaction::destroy` |
+| `transaction::classify` / `classify_pkgs` | `transaction::classify_steps` / `classify_step_pkgs` |
+
+Stałe `INSTALL`/`ERASE` istniały w dwóch modułach (stałe są w H# globalne po
+spłaszczeniu modułów) — teraz `JOB_INSTALL`/`JOB_ERASE` oraz
+`TRANS_INSTALL`/`TRANS_ERASE`. **Stałych używaj jako gołych nazw**
+(`REL_EQ`, `DISTTYPE_DEB`, `JOB_INSTALL`), nie jako `pool::REL_EQ` — ścieżka
+w pozycji wartości jest w AOT kompilowana do `0`.
+
+Wzorce `match` w stylu `lib::SatResult::Ok(x)` nie parsują się w H#
+(wzorzec ma najwyżej dwa segmenty) — używaj `result::is_ok` /
+`result::error_message`.
 
 ## Struktura API
 
 | moduł | co robi |
 |---|---|
-| `pool` | cykl życia `Pool`, internowanie stringów/Id (`str2id`/`id2str`), porównania wersji (`evrcmp`/`evrcmp_str`), typ dystrybucji (`set_disttype`) |
-| `repo` | cykl życia `Repo`, priorytety (`set_priority`/`get_priority`), wczytywanie pakietów z plików `.solv` (`add_solv_file`) lub "z palca" (`add_packages` — z walidacją, patrz niżej) |
-| `queue` | odpowiednik `Queue` z libsolv (kolejka `Id`), własna implementacja w H# — patrz sekcja "Uwagi techniczne" |
-| `job` | stałe `SOLVER_*` + budowanie kolejki zadań solvera (`install_name`, `install_name_version`, `erase_name`, `verify_all`, ...) |
-| `solver` | cykl życia `Solver`, flagi konfiguracyjne (`set_flag`/`allow_downgrade`/`allow_vendorchange`/`best_obey_policy`/`keep_orphans`/...), `solve()`, odczyt problemów |
-| `transaction` | wynik `solve()`: klasy kroków (`classify`), konkretne pakiety danej klasy (`classify_pkgs`), pełna lista do instalacji (`installed_result`) |
+| `result` | odczyt `SatResult<i32>` bez `match`: `is_ok`, `value`, `error_message` |
+| `pool` | cykl życia `Pool` (`new`/`destroy`), internowanie Id (`str_to_id`/`id_to_str`), porównania wersji (`evr_compare`/`evr_compare_str`), typ dystrybucji (`set_disttype`), flagi (`set_option`/`get_option`), rootdir (`set_root_dir`) |
+| `repo` | cykl życia `Repo` (`new`/`destroy`/`clear`/`finalize`), priorytety, wczytywanie: `.solv` (`add_solv_file`), rpm-md (`add_rpmmd_file`), Debian `Packages` (`add_deb_packages_file`), Arch `.db` (`add_arch_repo_file`), "z palca" (`add_packages`), zapis `.solv` (`write_solv_file`) |
+| `queue` | odpowiednik `Queue` z libsolv (kolejka `Id`), własna implementacja w H# |
+| `select` | selekcje libsolv: `find(p, "lib*", SELECTION_NAME \| SELECTION_GLOB)` |
+| `job` | stałe `SOLVER_*` + budowanie zadań (`install_name`, `install_name_version`, `install_glob`/`erase_glob`/`update_glob`, `verify_all`, ...) |
+| `solver` | cykl życia `Solver` (`new`/`destroy`), flagi, `run()`, odczyt problemów |
+| `transaction` | wynik `run()`: `classify_steps`, `classify_step_pkgs`, `installed_result`, `type_name`, oraz gotowy `resolve_install(p, ["bar"])` → `Plan { ok, problems, steps }` |
 
 Funkcje, które mogą faktycznie zawieść (I/O na plikach, parsowanie repo,
 zły operator porównania wersji), zwracają `SatResult<T>`
@@ -155,9 +244,10 @@ pkg.requires   = ["libc.so.6()(64bit)", "openssl >= 3.0"]
 pkg.provides   = ["webserver"]
 pkg.conflicts  = ["apache2"]
 
-match sv::repo::add_packages(p, myrepo, [pkg]) is
-    sv::SatResult::Ok(rc) => is end
-    sv::SatResult::Err(msg) => is write("blad: " + msg) end
+let res10 = sv::repo::add_packages(p, myrepo, [pkg])
+if !sv::result::is_ok(res10) is
+    let msg: string = sv::result::error_message(res10)
+    write("blad: " + msg)
 end
 ```
 
@@ -218,7 +308,7 @@ pakiet z podanej listy nie trafia do repo.
   których pola czytamy/piszemy bezpośrednio — obie mają w pełni publiczny,
   udokumentowany prefiks pól (poza `#ifdef LIBSOLV_INTERNAL`), więc jest
   to świadomy, ograniczony wyjątek od reguły "nie dotykamy layoutu".
-* **`transaction::classify` nie zwraca listy Id pakietów.** Zwraca
+* **`transaction::classify_steps` nie zwraca listy Id pakietów.** Zwraca
   kolejkę wypełnioną czwórkami `(type_id, count, from_id, to_id)` — po
   jednej czwórce na każdą *klasę* kroków transakcji (potwierdzone wobec
   SWIG-owych bindingów libsolv, `bindings/solv.i`). `mod transaction`
