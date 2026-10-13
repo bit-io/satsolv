@@ -1,0 +1,127 @@
+pub const REL_EQ: i32 = 2
+pub const REL_GT: i32 = 1
+pub const REL_LT: i32 = 4
+
+;; Tryby dla evr_compare() — src/evr.h
+pub const EVRCMP_COMPARE:         i32 = 0
+pub const EVRCMP_MATCH_RELEASE:   i32 = 1
+pub const EVRCMP_MATCH:           i32 = 2
+pub const EVRCMP_COMPARE_EVONLY:  i32 = 3
+
+;; Typy dystrybucji dla set_disttype() — src/pooltypes.h. Wpływa na
+;; semantykę porównywania wersji (rpm-style "1.0-1" vs deb-style
+;; epoch:wersja-revision itd.) — ustaw PRZED pool_setarch/set_arch.
+pub const DISTTYPE_RPM:   i32 = 0
+pub const DISTTYPE_DEB:   i32 = 1
+pub const DISTTYPE_ARCH:  i32 = 2
+pub const DISTTYPE_HAIKU: i32 = 3
+pub const DISTTYPE_CONDA: i32 = 4
+pub const DISTTYPE_APK:   i32 = 5
+
+pub fn new() -> int is
+    return pool_create()
+end
+
+pub fn destroy(p: int) is
+    pool_free(p)
+end
+
+pub fn set_debug_level(p: int, level: i32) is
+    pool_setdebuglevel(p, level)
+end
+
+;; Flagi POOL_FLAG_* (src/pool.h) dla set_option()/get_option().
+pub const POOL_FLAG_PROMOTEEPOCH:                  i32 = 1
+pub const POOL_FLAG_FORBIDSELFCONFLICTS:           i32 = 2
+pub const POOL_FLAG_OBSOLETEUSESPROVIDES:          i32 = 3
+pub const POOL_FLAG_IMPLICITOBSOLETEUSESPROVIDES:  i32 = 4
+pub const POOL_FLAG_OBSOLETEUSESCOLORS:            i32 = 5
+pub const POOL_FLAG_NOINSTALLEDOBSOLETES:          i32 = 6
+pub const POOL_FLAG_HAVEDISTEPOCH:                 i32 = 7
+pub const POOL_FLAG_NOOBSOLETESMULTIVERSION:       i32 = 8
+pub const POOL_FLAG_ADDFILEPROVIDESFILTERED:       i32 = 9
+pub const POOL_FLAG_IMPLICITOBSOLETEUSESCOLORS:    i32 = 10
+pub const POOL_FLAG_NOWHATPROVIDESAUX:             i32 = 11
+pub const POOL_FLAG_WHATPROVIDESWITHDISABLED:      i32 = 12
+
+;; Ustawia flage Pool; zwraca POPRZEDNIA wartosc.
+pub fn set_option(p: int, flag: i32, value: bool) -> i32 is
+    let v: i32 = if value then 1 else 0
+    return pool_set_flag(p, flag, v)
+end
+
+pub fn get_option(p: int, flag: i32) -> bool is
+    return pool_get_flag(p, flag) != 0
+end
+
+;; Katalog glowny (chroot) dla sciezek odczytywanych przez libsolv.
+pub fn set_root_dir(p: int, dir: string) is
+    pool_set_rootdir(p, dir)
+end
+
+pub fn get_root_dir(p: int) -> string is
+    return pool_get_rootdir(p)
+end
+
+pub fn set_arch(p: int, arch: string) is
+    pool_setarch(p, arch)
+end
+
+pub fn set_installed_repo(p: int, repo: int) is
+    pool_set_installed(p, repo)
+end
+
+;; Trzeba wywołać po dodaniu wszystkich repo, przed solver_create/solve.
+pub fn create_whatprovides(p: int) is
+    pool_createwhatprovides(p)
+end
+
+pub fn str_to_id(p: int, s: string, create_if_missing: bool) -> i32 is
+    let c: i32 = if create_if_missing then 1 else 0
+    return pool_str2id(p, s, c)
+end
+
+pub fn id_to_str(p: int, id: i32) -> string is
+    return pool_id2str(p, id)
+end
+
+pub fn dep_to_str(p: int, dep: i32) -> string is
+    return pool_dep2str(p, dep)
+end
+
+;; Buduje Id relacji "name <flags> evr", np. do "foo >= 1.2-3".
+pub fn rel_to_id(p: int, name: i32, evr: i32, flags: i32) -> i32 is
+    return pool_rel2id(p, name, evr, flags, 1)
+end
+
+pub fn evr_compare(p: int, evr1: i32, evr2: i32) -> i32 is
+    return pool_evrcmp(p, evr1, evr2, EVRCMP_COMPARE)
+end
+
+;; Jak evr_compare(), ale bez wcześniejszego internowania stringów przez
+;; str2id — wygodniejsze do jednorazowych porównań ("1.0-1" vs "2.0-1")
+;; bez zaśmiecania Pool nowymi Id, których nikt więcej nie użyje.
+;; Zwraca <0 gdy evr1 < evr2, 0 gdy równe, >0 gdy evr1 > evr2.
+pub fn evr_compare_str(p: int, evr1: string, evr2: string) -> i32 is
+    return pool_evrcmp_str(p, evr1, evr2, EVRCMP_COMPARE)
+end
+
+;; Ustawia typ dystrybucji (wpływa na semantykę porównywania wersji —
+;; rpm/deb/arch/apk/conda mają różne reguły). Zwraca poprzedni disttype
+;; przy sukcesie, -1 jeśli podany disttype nie jest wspierany.
+;; UWAGA: wywołaj przed set_arch() — pool_setarch zależy od disttype.
+pub fn set_disttype(p: int, disttype: i32) -> i32 is
+    return pool_setdisttype(p, disttype)
+end
+
+pub fn error_string(p: int) -> string is
+    return pool_errstr(p)
+end
+
+pub fn solvable_to_str(p: int, solvable_id: i32) -> string is
+    return pool_solvable2str(p, solvable_id)
+end
+
+pub fn job_to_str(p: int, how: i32, what: i32) -> string is
+    return pool_job2str(p, how, what, 0)
+end
