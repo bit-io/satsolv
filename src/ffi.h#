@@ -1,0 +1,91 @@
+extern static [c] is
+    fn tmpfile() -> int
+    fn fopen(path: string, mode: string) -> int
+    fn fputs(s: string, stream: int) -> i32
+    fn fclose(stream: int) -> i32
+    fn rewind(stream: int)
+end
+
+;; -- libsolvext (przed libsolv, patrz wyzej) --
+;; ---------------------------------------------------------------------------
+;; libsolvext — rozszerzenia; potrzebujemy tylko parsera formatu "testtags"
+;; ---------------------------------------------------------------------------
+extern static [c, "libsolvext"] is
+    fn testcase_add_testtags(repo: int, fp: int, flags: i32) -> i32
+    ;; solv_xfopen otwiera tez pliki skompresowane (.gz/.xz/.zst/.bz2).
+    fn solv_xfopen(path: string, mode: string) -> int
+    ;; `language` to w C `const char *` — przekazujemy 0 (NULL) = bez filtra jezyka.
+    fn repo_add_rpmmd(repo: int, fp: int, language: int, flags: i32) -> i32
+    fn repo_add_debpackages(repo: int, fp: int, flags: i32) -> i32
+    fn repo_add_arch_repo(repo: int, fp: int, flags: i32) -> i32
+end
+
+;; -- libsolv (rdzen) --
+;; ---------------------------------------------------------------------------
+;; libsolv (rdzeń) — wszystkie poniższe to prawdziwe symbole `extern`
+;; z src/pool.h, src/poolid.h, src/evr.h, src/repo.h, src/queue.h,
+;; src/solver.h, src/transaction.h (zweryfikowane wobec src/libsolv.ver)
+;; ---------------------------------------------------------------------------
+extern static [c, "libsolv"] is
+    ;; -- pool.h / poolid.h / evr.h --
+    fn pool_create() -> int
+    fn pool_free(pool: int)
+    fn pool_setdebuglevel(pool: int, level: i32)
+    fn pool_setarch(pool: int, arch: string)
+    fn pool_set_installed(pool: int, repo: int)
+    fn pool_createwhatprovides(pool: int)
+    fn pool_str2id(pool: int, s: string, create: i32) -> i32
+    fn pool_id2str(pool: int, id: i32) -> string
+    fn pool_id2rel(pool: int, id: i32) -> string
+    fn pool_id2evr(pool: int, id: i32) -> string
+    fn pool_dep2str(pool: int, dep: i32) -> string
+    fn pool_rel2id(pool: int, name: i32, evr: i32, flags: i32, create: i32) -> i32
+    fn pool_evrcmp(pool: int, evr1: i32, evr2: i32, mode: i32) -> i32
+    fn pool_evrcmp_str(pool: int, evr1: string, evr2: string, mode: i32) -> i32
+    fn pool_setdisttype(pool: int, disttype: i32) -> i32
+    fn pool_errstr(pool: int) -> string
+    fn pool_solvable2str(pool: int, p: i32) -> string
+    fn pool_job2str(pool: int, how: i32, what: i32, flagmask: i32) -> string
+    fn pool_set_flag(pool: int, flag: i32, value: i32) -> i32
+    fn pool_get_flag(pool: int, flag: i32) -> i32
+    fn pool_set_rootdir(pool: int, rootdir: string)
+    fn pool_get_rootdir(pool: int) -> string
+
+    ;; -- repo.h --
+    fn repo_create(pool: int, name: string) -> int
+    fn repo_free(repo: int, reuseids: i32)
+    fn repo_add_solvable(repo: int) -> i32
+    fn repo_internalize(repo: int)
+    fn repo_add_solv(repo: int, fp: int, flags: i32) -> i32
+    fn repo_empty(repo: int, reuseids: i32)
+    fn repo_write(repo: int, fp: int) -> i32
+
+    ;; -- queue.h (tylko realnie eksportowane symbole — patrz uwaga #3 wyżej) --
+    fn queue_init(q: int)
+    fn queue_free(q: int)
+    fn queue_alloc_one(q: int)
+
+    ;; -- selection.h --
+    fn selection_make(pool: int, selection: int, name: string, flags: i32) -> i32
+    fn selection_solvables(pool: int, selection: int, pkgs: int)
+
+    ;; -- solver.h --
+    fn solver_create(pool: int) -> int
+    fn solver_free(solv: int)
+    fn solver_solve(solv: int, job: int) -> i32
+    fn solver_create_transaction(solv: int) -> int
+    fn solver_set_flag(solv: int, flag: i32, value: i32) -> i32
+    fn solver_get_flag(solv: int, flag: i32) -> i32
+    fn solver_problem_count(solv: int) -> i32
+    fn solver_next_problem(solv: int, problem: i32) -> i32
+    fn solver_solution_count(solv: int, problem: i32) -> i32
+    fn solver_findallproblemrules(solv: int, problem: i32, rules: int)
+    fn solver_problem2str(solv: int, problem: i32) -> string
+
+    ;; -- transaction.h --
+    fn transaction_free(trans: int)
+    fn transaction_type(trans: int, p: i32, mode: i32) -> i32
+    fn transaction_classify(trans: int, mode: i32, classes: int)
+    fn transaction_classify_pkgs(trans: int, mode: i32, type_id: i32, from_id: i32, to_id: i32, pkgs: int)
+    fn transaction_installedresult(trans: int, installedq: int) -> i32
+end
