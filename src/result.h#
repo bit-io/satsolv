@@ -1,0 +1,37 @@
+pub fn is_ok(r: SatResult<i32>) -> bool is
+    match r is
+        SatResult::Ok(v) => is
+            return true
+        end
+        SatResult::Err(msg) => is
+            return false
+        end
+    end
+    return false
+end
+
+;; Wartosc z Ok(..), albo -1 gdy to Err.
+pub fn value(r: SatResult<i32>) -> i32 is
+    match r is
+        SatResult::Ok(v) => is
+            return v
+        end
+        SatResult::Err(msg) => is
+            return -1
+        end
+    end
+    return -1
+end
+
+;; Opis bledu z Err(..), albo "" gdy to Ok.
+pub fn error_message(r: SatResult<i32>) -> string is
+    match r is
+        SatResult::Ok(v) => is
+            return ""
+        end
+        SatResult::Err(msg) => is
+            return msg
+        end
+    end
+    return ""
+end
