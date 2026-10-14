@@ -14,6 +14,9 @@
 
 [build]
 -> link => static
+-> native           => bash scripts/bit-native.sh
+-> native-lib-path  => .bit/native/libsolv/lib
+-> native-skip-if   => .bit/native/libsolv/lib/libsolvext.a
 
 [lib]
 -> output => hlib
