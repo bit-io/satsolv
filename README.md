@@ -53,6 +53,13 @@ H# próbują najpierw `pkg-config --static --libs libsolv` (odpowiednio
 
 ### Błąd `cannot find -lsolv` / "only a shared libsolv.so was found"
 
+**Od teraz robi to `bit` sam:** `Bit.hk` ma `[build] native => bash scripts/bit-native.sh`.
+Przed kompilacją (także gdy satsolv jest zależnością libhammer/hammer) skrypt sprawdza, czy
+kompilator widzi `libsolv.a` + `libsolvext.a`; jeśli nie — buduje je (git + cmake + make + cc)
+do `.bit/native/libsolv/lib`, a bit dopisuje ten katalog do `LIBRARY_PATH`. Wystarczy mieć
+narzędzia (`sudo apt install git cmake build-essential pkg-config libexpat1-dev zlib1g-dev liblzma-dev`).
+Ręczna procedura poniżej jest potrzebna tylko poza `bit`.
+
 `satsolv` linkuje libsolv **statycznie** (`link => static`), a pakiety `-dev`
 większości dystrybucji dają tylko `libsolv.so`. Zbuduj statyczne archiwa
 (z `-fPIC`, bo `.hlib` jest linkowany jako biblioteka współdzielona) do
