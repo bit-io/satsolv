@@ -69,7 +69,7 @@ lokalnego prefiksu — jednorazowo:
 # Debian/Ubuntu: nagłówki potrzebne do budowy
 sudo apt install git cmake build-essential pkg-config libexpat1-dev zlib1g-dev liblzma-dev
 
-scripts/install-static-libsolv.sh        # -> ~/.hackeros/native/libsolv/lib/libsolv{,ext}.a
+bash scripts/install-static-libsolv.sh   # -> ~/.hackeros/native/libsolv/lib/libsolv{,ext}.a
 source scripts/env.sh                    # PKG_CONFIG_PATH, LIBRARY_PATH, CPATH
 bit
 ```
