@@ -46,4 +46,4 @@ MSG
 fi
 
 echo "satsolv: buduje statyczne libsolv.a / libsolvext.a -> $LIBDIR"
-PREFIX="$PREFIX" "$ROOT/scripts/install-static-libsolv.sh"
+PREFIX="$PREFIX" bash "$ROOT/scripts/install-static-libsolv.sh"
