@@ -87,6 +87,9 @@ itd.) muszą dolinkować zależności libsolvext, których `.hlib` nie wlicza
 
 ```sh
 export LDFLAGS="-lexpat -lz -llzma"
+
+> Od teraz `src/ffi.h#` sam dolinkowuje `-lz -llzma -lexpat` (bloki `extern dynamic`), wiec `LDFLAGS`
+> nie sa potrzebne w projektach opartych o `bit` — wystarcza pakiety `-dev` (`zlib1g-dev liblzma-dev libexpat1-dev`).
 ```
 
 Programy, które nie wołają loaderów, tego nie potrzebują.
