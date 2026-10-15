@@ -14,6 +14,8 @@
 
 [build]
 -> link => static
+! libsolv.a nie ma w pakietach -dev (tylko .so) — bit zbuduje je sam przed kompilacja
+! (takze gdy satsolv jest zaleznoscia libhammer/hammer); katalog trafia do LIBRARY_PATH
 -> native           => bash scripts/bit-native.sh
 -> native-lib-path  => .bit/native/libsolv/lib
 -> native-skip-if   => .bit/native/libsolv/lib/libsolvext.a
@@ -48,3 +50,33 @@
 --> apk => libsolv-dev
 --> zypper => libsolv-devel
 --> brew => libsolv
+-> zlib
+--> pkg-config => zlib
+--> header => zlib.h
+--> lib => z
+--> apt => zlib1g-dev
+--> dnf => zlib-devel
+--> pacman => zlib
+--> apk => zlib-dev
+--> zypper => zlib-devel
+--> brew => zlib
+-> liblzma
+--> pkg-config => liblzma
+--> header => lzma.h
+--> lib => lzma
+--> apt => liblzma-dev
+--> dnf => xz-devel
+--> pacman => xz
+--> apk => xz-dev
+--> zypper => xz-devel
+--> brew => xz
+-> expat
+--> pkg-config => expat
+--> header => expat.h
+--> lib => expat
+--> apt => libexpat1-dev
+--> dnf => expat-devel
+--> pacman => expat
+--> apk => expat-dev
+--> zypper => libexpat-devel
+--> brew => expat
