@@ -20,6 +20,28 @@ extern static [c, "libsolvext"] is
     fn repo_add_arch_repo(repo: int, fp: int, flags: i32) -> i32
 end
 
+;; ---------------------------------------------------------------------------
+;; Zaleznosci TRANZYTYWNE libsolvext.a (zlib / liblzma / expat)
+;; ---------------------------------------------------------------------------
+;; `libsolvext.a` to archiwum statyczne bez wlasnych zaleznosci: `solv_xfopen` (gz), `repo_add_deb`
+;; (zlib + lzma) i parser XML rpm-md (expat) wolaja `gzopen64`, `inflate*`, `lzma_*`, `XML_*`.
+;; Bez dolinkowania `-lz -llzma -lexpat` KAZDY program uzywajacy satsolv konczyl sie
+;; "undefined reference to `gzopen64' / `inflateInit2_' / `lzma_auto_decoder' / `XML_ParserCreate'".
+;; `dynamic`: w linku `-static` ld i tak bierze libX.a, a przy budowie hlib (shared) unikamy
+;; niepozycyjnych archiwow (.a bez -fPIC). Kazdy blok wymaga >= 1 deklaracji — bierzemy symbole
+;; tylko-do-odczytu, nieuzywane przez wrappery.
+extern dynamic [c, "z"] is
+    fn zlibVersion() -> string
+end
+
+extern dynamic [c, "lzma"] is
+    fn lzma_version_string() -> string
+end
+
+extern dynamic [c, "expat"] is
+    fn XML_ExpatVersion() -> string
+end
+
 ;; -- libsolv (rdzen) --
 ;; ---------------------------------------------------------------------------
 ;; libsolv (rdzeń) — wszystkie poniższe to prawdziwe symbole `extern`
