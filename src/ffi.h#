@@ -26,6 +26,14 @@ end
 ;; z src/pool.h, src/poolid.h, src/evr.h, src/repo.h, src/queue.h,
 ;; src/solver.h, src/transaction.h (zweryfikowane wobec src/libsolv.ver)
 ;; ---------------------------------------------------------------------------
+;; nakladka C (scripts/satsolv_shim.c -> libsatsolvshim.a) — MUSI byc przed libsolv (kolejnosc linkowania)
+extern static [c, "libsatsolvshim"] is
+    fn satsolv_solvid2str(pool: int, p: i32) -> string
+    fn satsolv_solvid_name(pool: int, p: i32) -> string
+    fn satsolv_solvid_evr(pool: int, p: i32) -> string
+    fn satsolv_solvid_arch(pool: int, p: i32) -> string
+end
+
 extern static [c, "libsolv"] is
     ;; -- pool.h / poolid.h / evr.h --
     fn pool_create() -> int
@@ -44,7 +52,6 @@ extern static [c, "libsolv"] is
     fn pool_evrcmp_str(pool: int, evr1: string, evr2: string, mode: i32) -> i32
     fn pool_setdisttype(pool: int, disttype: i32) -> i32
     fn pool_errstr(pool: int) -> string
-    fn pool_solvable2str(pool: int, p: i32) -> string
     fn pool_job2str(pool: int, how: i32, what: i32, flagmask: i32) -> string
     fn pool_set_flag(pool: int, flag: i32, value: i32) -> i32
     fn pool_get_flag(pool: int, flag: i32) -> i32
