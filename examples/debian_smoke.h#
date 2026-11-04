@@ -1,0 +1,66 @@
+use "bit -> satsolv" from "sv"
+
+;; Test dymny regresji znalezionych przy hammerze (uruchom: bit run albo h# compile + LIBRARY_PATH do libsolv):
+;;  1. pakiet dodany przez repo::add_packages jest widoczny dla solvera (format `=Pkg:`, 4 pola),
+;;  2. komunikaty problemow nie sa smieciami po pool::destroy (kopia stringa z libsolv),
+;;  3. pool::solvable_name/evr/arch i solvable_to_str nie wywalaja sie (nakladka C),
+;;  4. semantyka Debiana: `3build3 < z`, arch `all` przy polityce `amd64:all`.
+
+fn fails() -> int is return 0 end
+
+fn check(label: string, ok: bool) -> int is
+    if ok is
+        println("ok   " + label)
+        return 0
+    end
+    println("FAIL " + label)
+    return 1
+end
+
+fn solve(req: string, pkg_arch: string) -> i32 is
+    let p: int = pool::new()
+    pool::set_disttype(p, pool::DISTTYPE_DEB)
+    pool::set_arch(p, "amd64:all")
+    let system: int = repo::new(p, "system")
+    pool::set_installed_repo(p, system)
+    repo::finalize(system)
+    let avail: int = repo::new(p, "available")
+    let mut foo: repo::Pkg = repo::new_pkg("foo", "1:1.0-2", "", pkg_arch)
+    if req != "" is foo.requires = [req] end
+    let bar: repo::Pkg = repo::new_pkg("bar", "2.10.36-3build3", "", "amd64")
+    repo::add_packages(p, avail, [foo, bar])
+    repo::finalize(avail)
+    pool::create_whatprovides(p)
+    let jobs: int = queue::new()
+    job::install_name(jobs, p, "foo")
+    let s: int = solver::new(p)
+    let n: i32 = solver::run(s, jobs)
+    solver::destroy(s)
+    pool::destroy(p)
+    return n
+end
+
+fn main() is
+    let mut f: int = 0
+    f += check("visible package installs", solve("", "amd64") == 0)
+    f += check("arch all visible", solve("", "all") == 0)
+    f += check("versioned dep (<= x-z) satisfied by 3build3", solve("bar <= 2.10.36-z", "amd64") == 0)
+    f += check("unsatisfiable dep is a problem", solve("nothing-like-this", "amd64") == 1)
+
+    ;; komunikat po zniszczeniu puli
+    let p: int = pool::new()
+    pool::set_arch(p, "x86_64")
+    let system: int = repo::new(p, "system")
+    pool::set_installed_repo(p, system)
+    repo::finalize(system)
+    let jobs: int = queue::new()
+    job::install_name(jobs, p, "missing-pkg")
+    pool::create_whatprovides(p)
+    let s: int = solver::new(p)
+    solver::run(s, jobs)
+    let msgs: [string] = solver::all_problems_as_strings(s)
+    solver::destroy(s)
+    pool::destroy(p)
+    f += check("problem message survives pool::destroy", msgs.len() == 1 && msgs[0] == "package missing-pkg does not exist")
+    if f > 0 is println("FAILED: " + to_string(f)) else println("all ok") end
+end
