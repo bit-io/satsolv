@@ -1,3 +1,7 @@
+fn own_str(s: string) -> string is
+    return "" + s
+end
+
 pub const REL_EQ: i32 = 2
 pub const REL_GT: i32 = 1
 pub const REL_LT: i32 = 4
@@ -60,7 +64,7 @@ pub fn set_root_dir(p: int, dir: string) is
 end
 
 pub fn get_root_dir(p: int) -> string is
-    return pool_get_rootdir(p)
+    return own_str(pool_get_rootdir(p))
 end
 
 pub fn set_arch(p: int, arch: string) is
@@ -82,11 +86,11 @@ pub fn str_to_id(p: int, s: string, create_if_missing: bool) -> i32 is
 end
 
 pub fn id_to_str(p: int, id: i32) -> string is
-    return pool_id2str(p, id)
+    return own_str(pool_id2str(p, id))
 end
 
 pub fn dep_to_str(p: int, dep: i32) -> string is
-    return pool_dep2str(p, dep)
+    return own_str(pool_dep2str(p, dep))
 end
 
 ;; Buduje Id relacji "name <flags> evr", np. do "foo >= 1.2-3".
@@ -115,13 +119,27 @@ pub fn set_disttype(p: int, disttype: i32) -> i32 is
 end
 
 pub fn error_string(p: int) -> string is
-    return pool_errstr(p)
+    return own_str(pool_errstr(p))
 end
 
 pub fn solvable_to_str(p: int, solvable_id: i32) -> string is
-    return pool_solvable2str(p, solvable_id)
+    return own_str(satsolv_solvid2str(p, solvable_id))
+end
+
+;; Strukturalne akcesory solvable'a po Id (patrz scripts/satsolv_shim.c). Preferuj je zamiast parsowania
+;; `solvable_to_str()` — etykieta "name-evr.arch" jest niejednoznaczna dla wersji Debiana.
+pub fn solvable_name(p: int, solvable_id: i32) -> string is
+    return own_str(satsolv_solvid_name(p, solvable_id))
+end
+
+pub fn solvable_evr(p: int, solvable_id: i32) -> string is
+    return own_str(satsolv_solvid_evr(p, solvable_id))
+end
+
+pub fn solvable_arch(p: int, solvable_id: i32) -> string is
+    return own_str(satsolv_solvid_arch(p, solvable_id))
 end
 
 pub fn job_to_str(p: int, how: i32, what: i32) -> string is
-    return pool_job2str(p, how, what, 0)
+    return own_str(pool_job2str(p, how, what, 0))
 end
