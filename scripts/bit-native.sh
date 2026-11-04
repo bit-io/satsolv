@@ -24,10 +24,23 @@ has_static() {  # $1 = nazwa pliku; szuka w LIBRARY_PATH i w sciezkach kompilato
 
 mkdir -p "$LIBDIR"   # bit ostrzega, gdy katalog z [build] native-lib-path nie istnieje
 
-if [ -f "$LIBDIR/libsolv.a" ] && [ -f "$LIBDIR/libsolvext.a" ]; then exit 0; fi
+# Nakladka C (satsolv_solvid2str) -> $LIBDIR/libsatsolvshim.a. Budowana ZAWSZE (takze gdy libsolv jest systemowy),
+# bo pool_solvid2str() jest `static inline` i nie da sie go wywolac z FFI.
+build_shim() {
+  [ -f "$LIBDIR/libsatsolvshim.a" ] && return 0
+  local inc=""
+  [ -d "$PREFIX/include" ] && inc="-I$PREFIX/include"
+  local tmp; tmp="$(mktemp -d)"
+  cc -O2 -fPIC $inc -c "$ROOT/scripts/satsolv_shim.c" -o "$tmp/satsolv_shim.o"
+  ar rcs "$LIBDIR/libsatsolvshim.a" "$tmp/satsolv_shim.o"
+  rm -rf "$tmp"
+}
+
+if [ -f "$LIBDIR/libsolv.a" ] && [ -f "$LIBDIR/libsolvext.a" ]; then build_shim; exit 0; fi
 
 if has_static libsolv.a && has_static libsolvext.a; then
-  echo "satsolv: statyczne libsolv.a/libsolvext.a znalezione w systemie — nic do budowania"
+  echo "satsolv: statyczne libsolv.a/libsolvext.a znalezione w systemie — buduje tylko nakladke C"
+  build_shim
   exit 0
 fi
 
@@ -47,3 +60,4 @@ fi
 
 echo "satsolv: buduje statyczne libsolv.a / libsolvext.a -> $LIBDIR"
 PREFIX="$PREFIX" bash "$ROOT/scripts/install-static-libsolv.sh"
+build_shim
