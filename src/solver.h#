@@ -1,3 +1,7 @@
+fn own_str(s: string) -> string is
+    return "" + s
+end
+
 pub const FLAG_ALLOW_DOWNGRADE:          i32 = 1
 pub const FLAG_ALLOW_ARCHCHANGE:         i32 = 2
 pub const FLAG_ALLOW_VENDORCHANGE:       i32 = 3
@@ -87,7 +91,7 @@ pub fn count_solutions(s: int, problem: i32) -> i32 is
 end
 
 pub fn problem_to_str(s: int, problem: i32) -> string is
-    return solver_problem2str(s, problem)
+    return own_str(solver_problem2str(s, problem))
 end
 
 ;; Zwraca Id-y reguł powodujących dany problem (nowa kolejka —
