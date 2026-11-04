@@ -160,14 +160,14 @@ end
 ;; --- walidacja/escaping wejścia przed sklejeniem tekstu "testtags" ---
 ;;
 ;; Format testtags jest rozdzielany liniami: linia zaczyna się od
-;; "#>=Tag: " i trwa do końca linii. Jedyny sposób, żeby wartość pola
+;; "=Tag: " i trwa do końca linii. Jedyny sposób, żeby wartość pola
 ;; "uciekła" poza swój tag i stała się osobną (dowolną!) linią
-;; "#>=...", to wstrzyknięcie znaku nowej linii (`\n`/`\r`) w wartość —
-;; np. `name = "foo\n#>=Pkg: zly-pakiet 1 1 x86_64"` bez walidacji
+;; "=...", to wstrzyknięcie znaku nowej linii (`\n`/`\r`) w wartość —
+;; np. `name = "foo\n=Pkg: zly-pakiet 1 1 x86_64"` bez walidacji
 ;; wygenerowałoby DWA pakiety zamiast jednego. Dlatego każde pole
 ;; przechodzi przez `is_clean_line` (zakaz \n/\r) przed sklejeniem, a
 ;; pola name/version/release/arch (rozdzielane spacją w jednej linii
-;; "#>=Pkg: name version release arch") dodatkowo przez `is_clean_token`
+;; "=Pkg: name version release arch") dodatkowo przez `is_clean_token`
 ;; (zakaz białych znaków w ogóle, bo spacja przesunęłaby kolejne pola).
 
 fn contains_char(s: string, ch: string) -> bool is
@@ -205,7 +205,8 @@ fn validate_pkg(p: Pkg) -> string is
     if !is_clean_token(p.version) is
         return "nieprawidlowa wersja pakietu '" + p.name + "': '" + p.version + "'"
     end
-    if !is_clean_token(p.release) is
+    ;; pusty release = `version` jest juz pelnym EVR (np. Debian "1:2.3-4") — patrz pkg_to_testtags
+    if p.release != "" && !is_clean_token(p.release) is
         return "nieprawidlowy release pakietu '" + p.name + "': '" + p.release + "'"
     end
     if !is_clean_token(p.arch) is
@@ -230,14 +231,24 @@ end
 fn tag_lines(tag: string, deps: [string]) -> string is
     let mut out: string = ""
     for d in deps is
-        out = out + "#>=" + tag + ": " + d + "\n"
+        out = out + "=" + tag + ": " + d + "\n"
     end
     return out
 end
 
+fn pkg_release_token(p: Pkg) -> string is
+    if p.release == "" is return "-" end
+    return p.release
+end
+
+;; Linia pakietu w formacie testtags libsolv (ext/repo_testcase.c, `testcase_add_testtags`):
+;;     =Pkg: <name> <version> <release> <arch>        — dokladnie CZTERY pola, linia MUSI zaczynac sie od `=`
+;; (wczesniej pisalismy `#>=Pkg:` — prefiks `#>` zdejmuje dopiero czytnik plikow testcase, a `testcase_add_testtags`
+;; ignoruje takie linie, wiec do repo nie trafial ZADEN pakiet: "package X does not exist").
+;; libsolv skleja evr = version + "-" + release; release "-" oznacza brak release (wtedy evr = version, np. pelny
+;; Debianowy EVR "1:2.3-4" podany w `version`).
 fn pkg_to_testtags(p: Pkg) -> string is
-    let mut out: string = "#>=Pkg: " + p.name + " " + p.version + " " +
-                           p.release + " " + p.arch + "\n"
+    let mut out: string = "=Pkg: " + p.name + " " + p.version + " " + pkg_release_token(p) + " " + p.arch + "\n"
     out = out + tag_lines("Req", p.requires)
     out = out + tag_lines("Prv", p.provides)
     out = out + tag_lines("Con", p.conflicts)
@@ -261,16 +272,16 @@ pub fn add_packages(p: int, r: int, pkgs: [Pkg]) -> SatResult<i32> is
         end
     end
 
-    let mut text: string = ""
-    for pk in pkgs is
-        text = text + pkg_to_testtags(pk)
-    end
-
+    ;; Pakiety ida strumieniowo do pliku tymczasowego. Wczesniej: `text = text + pkg_to_testtags(pk)` — kwadratowe
+    ;; (H# nie zwalnia stringow): przy ~70 tys. pakietow Debiana (~20 MB tekstu) to setki GB skopiowanych danych,
+    ;; czyli minuty "Reading package lists..." i gigabajty RAM.
     let fp: int = tmpfile()
     if fp == 0 is
         return SatResult::Err("nie udalo sie utworzyc pliku tymczasowego (tmpfile)")
     end
-    fputs(text, fp)
+    for pk in pkgs is
+        fputs(pkg_to_testtags(pk), fp)
+    end
     rewind(fp)
     let rc: i32 = testcase_add_testtags(r, fp, 0)
     fclose(fp)
