@@ -18,7 +18,7 @@
 ! (takze gdy satsolv jest zaleznoscia libhammer/hammer); katalog trafia do LIBRARY_PATH
 -> native           => bash scripts/bit-native.sh
 -> native-lib-path  => .bit/native/libsolv/lib
--> native-skip-if   => .bit/native/libsolv/lib/libsolvext.a
+-> native-skip-if   => .bit/native/libsolv/lib/libsatsolvshim.a
 
 [lib]
 -> output => hlib
